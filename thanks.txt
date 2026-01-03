@@ -1,0 +1,11 @@
+徐志伟老师、黄英豪老师的鼓励和肯定
+所有在公测阶段游玩过、提供过帮助的同学（特别感谢吴文鹏😋同学在前期版本（无邻居雷提示）时成为首个且为唯一一个成功通关的同学🎊）
+solstice23提供的svg源码
+texttosvg.app提供字体转svg路径
+midishow上的用户“入土为安之策”提供的原音频midi文件
+atelierAnchor的开源字体得意黑
+Google的开源字体Noto Emoji
+mrdoob的Three.JS库
+Copilot, DeepSeek, Claude, ChatGPT, Gemini等AI的协助
+Csyday老师的图片 INTO A NEW UNIVERSE🌠（PixivID：114695632）
+仅供学习用途，未经授权，请勿转载
