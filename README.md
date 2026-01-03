@@ -10,6 +10,12 @@ This project demonstrates several CS concepts taught in introductory courses, in
 
 A 3D Minesweeper built with Three.js. Players can choose preset difficulties or customize difficulty and block colors. 
 
+主页面 Home
+
+<img width="1836" height="1083" alt="image" src="https://github.com/user-attachments/assets/ccfd2cbc-ee55-4df4-a789-5a712ecf4cf6" />
+
+<img width="1844" height="1083" alt="image" src="https://github.com/user-attachments/assets/b47956fb-3d9a-432d-be14-09451170886b" />
+
 ## 文件结构 📁
 
 - `index.html`：游戏主页
@@ -55,3 +61,6 @@ Author: HurtGhostMeow.
 Thanks to instructors Zhiwei Xu and Yinghao Huang for encouragement and guidance. 
 
 Gratitude to open-source resources and tools (including AI assistants like Copilot) used during development.
+
+## 许可证 📝
+本项目采用 [BSD-3-Clause License](./LICENSE) 许可证
