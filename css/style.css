@@ -29,6 +29,11 @@ body {
     flex-direction: column;
 }
 
+/* 防止页面水平溢出导致出现横向滚动条 */
+body, html {
+    overflow-x: hidden;
+}
+
 .blur-box {
     background-color: light-dark(rgba(178, 220, 232, 0.4), rgba(46, 40, 51, 0.4));
     box-shadow: 0 5px 15px light-dark(rgba(188, 230, 242, 0.8), rgba(201, 154, 237, 0.8));
@@ -199,7 +204,7 @@ input:invalid {
     transform: scale(0.95);
 }
 
-#overlay, #load-overlay {
+#overlay, #load-overlay, #setting-overlay {
     position: fixed;
     height: 100dvh;
     width: 100dvw;
@@ -210,7 +215,7 @@ input:invalid {
     z-index: 800;
 }
 
-#thanksBox {
+#thanksBox, #load-box, #settings-div {
     position: relative;
     top: 20dvh;
     margin: auto;
@@ -234,33 +239,21 @@ input:invalid {
 }
 
 #load-box {
-    position: relative;
-    top: 20dvh;
-    margin: auto;
-    padding: 2vh 2vw;
     width: 40vw;
     height: 30vh;
-    text-align: center;
-    align-items: center;
-    background-color: light-dark(rgba(200, 230, 250, 0.4), rgba(50, 30, 60, 0.4));
-    box-shadow: 0 5px 15px light-dark(rgba(210, 240, 255, 0.8), rgba(150, 100, 200, 0.8));
-    border-radius: 30px;
-    backdrop-filter: blur(50px);
-    overflow-y: auto;
-    scrollbar-width: none;
-    opacity: 0;
-    transform: translateY(20px) scale(0.98);
-    transform-origin: center;
-    animation: thanks-box-in 250ms cubic-bezier(.2,.8,.2,1) forwards;
-    color: #f2f2f2;
-    z-index: 850;
 }
 
-#overlay.closing, #load-overlay.closing {
+#settings-div {
+    width: 50vw;
+    height: 40vh;
+    z-index: 900;
+}
+
+#overlay.closing, #load-overlay.closing, #setting-overlay.closing {
     animation: overlay-out 180ms ease forwards;
 }
 
-#thanksBox.closing, #load-box.closing {
+#thanksBox.closing, #load-box.closing, #settings-div.closing {
     animation: thanks-box-out 180ms ease forwards;
 }
 
@@ -293,6 +286,19 @@ input:invalid {
     background-color: light-dark(rgba(255, 255, 255, 0.1), rgba(20, 10, 30, 0.1));
 }
 
+/* 保证 canvas 不会超出容器 */
+#game-container, #game-container * {
+    box-sizing: border-box;
+}
+
+#game-canvas {
+    width: 100% !important;
+    height: auto !important;
+    max-width: 100%;
+    max-height: 80vh; /* 不超过视口高度，防止循环拉伸 */
+    display: block;
+}
+
 #introduction {
     flex: 0 0 30vw;
     margin: 2vh 1vw;
@@ -302,6 +308,13 @@ input:invalid {
     perspective: 1000px;
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
+}
+
+/* 限制介绍模块的最大宽度和自动换行，防止恢复时溢出 */
+#introduction {
+    max-width: 40vw;
+    box-sizing: border-box;
+    overflow-wrap: break-word;
 }
 
 #introduction:hover {
@@ -412,6 +425,49 @@ input:invalid {
     padding: 2vh 0;
     width: 100%;
     overflow-x: hidden;
+}
+
+/* 当隐藏介绍模块时，通过在 #main-content 上添加 .intro-hidden 来控制布局，便于可靠恢复 */
+/* 使用过渡动画平滑隐藏/显示介绍，并平滑调整游戏区域宽度 */
+#main-content.intro-hidden #introduction {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+    max-height: 0;
+    overflow: hidden;
+    pointer-events: none;
+    transition: opacity 280ms ease, transform 280ms ease, max-height 300ms ease;
+    /* 将横向占位归零，允许 game-box 居中 */
+    flex: 0 0 0 !important;
+    width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transition: opacity 280ms ease, transform 280ms ease, max-height 300ms ease, width 320ms ease;
+}
+
+#main-content:not(.intro-hidden) #introduction {
+    opacity: 1;
+    transform: none;
+    max-height: 2000px; /* 足够大以容纳内容 */
+    transition: opacity 280ms ease, transform 280ms ease, max-height 300ms ease, width 320ms ease;
+    flex: 0 0 30vw !important;
+    width: 30vw !important;
+}
+
+#main-content.intro-hidden #game-box {
+    /* 覆盖原有 flex 规则，使 width 生效并平滑过渡；居中 */
+    flex: 0 0 auto !important;
+    flex-basis: auto !important;
+    width: calc(100% - 4vw) !important;
+    margin: 2vh auto !important;
+    transition: width 320ms cubic-bezier(.2,.8,.2,1);
+}
+
+#main-content:not(.intro-hidden) #game-box {
+    flex: 0 0 auto !important;
+    flex-basis: auto !important;
+    width: 60vw !important;
+    margin: 2vh auto !important;
+    transition: width 320ms cubic-bezier(.2,.8,.2,1);
 }
 
 #block-type-select {
