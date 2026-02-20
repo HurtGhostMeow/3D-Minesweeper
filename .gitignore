@@ -1,0 +1,8 @@
+# Ignore font, images and music folders for repository
+font/
+img/
+music/
+
+# Common ignores
+.DS_Store
+Thumbs.db

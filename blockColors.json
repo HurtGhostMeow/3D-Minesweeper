@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 {
     "hidden": "0x999999",
     "mine": "0xff4444",
@@ -11,4 +12,19 @@
     "7": "0xbee238",
     "8": "0x903812",
     "9": "0xe2389f"
+=======
+{
+    "hidden": "0x999999",
+    "mine": "0xff4444",
+    "flag": "0x4444ff",
+    "1": "0xf1e87a",
+    "2": "0xa1f17a",
+    "3": "0x7a97f1",
+    "4": "0xab7af1",
+    "5": "0x38ac12",
+    "6": "0x401238",
+    "7": "0xbee238",
+    "8": "0x903812",
+    "9": "0xe2389f"
+>>>>>>> 338dbc3 (Initial commit: add project files (font/img/music ignored))
 }

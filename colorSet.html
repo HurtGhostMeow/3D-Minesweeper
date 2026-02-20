@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -92,4 +93,100 @@
     <script src="js/color_set.js" type="module"></script>
     <script src="js/menu.js" type="module"></script>
 </body>
+=======
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="img/icon.png" type="image/png">
+    <title>喜欢您来！😊 三维扫雷方块调色器</title>
+    <meta name="description" content="三维扫雷方块调色器 — 自定义三维扫雷游戏中方块颜色的网页工具。选择并应用您喜欢的颜色，打造个性化的游戏体验！">
+    <meta name="robots" content="index, follow">
+
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="三维扫雷方块调色器 — 自定义方块颜色网页工具">
+    <meta property="og:description" content="一个用于自定义三维扫雷游戏中方块颜色的网页工具，支持颜色选择与导入导出设置。立即使用，打造个性化的游戏体验！">
+
+    <!-- SEO由GitHub Copilot生成 -->
+    <link rel="stylesheet" type="text/css" href="css/style.css">
+</head>
+<body>
+    <button id="menu">
+        菜单
+    </button>
+    <main id="main-content">
+        <div class="blur-box" id="color-set-box">
+            <h1 style="text-align: center;">三维扫雷方块调色器</h1>
+            <p>使用此页面可以自定义三维扫雷游戏中方块的颜色。选择您喜欢的颜色，然后将其应用到游戏中，享受个性化的游戏体验！</p>
+            <p>若设置的颜色数少于总数时，大于已设置的最大邻居雷数的方块将使用已设置的邻居雷最多的方块的颜色</p>
+            <select id="block-type-select">
+                <option value="hidden">未打开方块</option>
+                <option value="mine">地雷方块</option>
+                <option value="flag">标记方块</option>
+                <option value="1">周围有1个方块</option>
+                <option value="2">周围有2个方块</option>
+                <option value="3">周围有3个方块</option>
+                <option value="4">周围有4个方块</option>
+                <option value="5">周围有5个方块</option>
+                <option value="6">周围有6个方块</option>
+                <option value="7">周围有7个方块</option>
+                <option value="8">周围有8个方块</option>
+                <option value="9">周围有9个方块</option>
+                <option value="10">周围有10个方块</option>
+                <option value="11">周围有11个方块</option>
+                <option value="12">周围有12个方块</option>
+                <option value="13">周围有13个方块</option>
+                <option value="14">周围有14个方块</option>
+                <option value="15">周围有15个方块</option>
+                <option value="16">周围有16个方块</option>
+                <option value="17">周围有17个方块</option>
+                <option value="18">周围有18个方块</option>
+                <option value="19">周围有19个方块</option>
+                <option value="20">周围有20个方块</option>
+                <option value="21">周围有21个方块</option>
+                <option value="22">周围有22个方块</option>
+                <option value="23">周围有23个方块</option>
+                <option value="24">周围有24个方块</option>
+                <option value="25">周围有25个方块</option>
+                <option value="26">周围有26个方块</option>
+            </select>
+            <div class="color-picker-section">
+                <label for="color-picker">选择方块颜色：</label>
+                <input type="color" id="color-picker" name="color-picker">
+            </div>
+            <div id="color-legend">
+                <!-- 颜色图例将由 JS 动态生成 -->
+            </div>
+            <div class="button-group">
+                <button id="apply-colors-button">应用颜色到游戏</button>
+                <button id="get-colors-button">获取当前游戏中颜色设置</button>
+                <button id="reset-colors-button">重置为自定义默认颜色</button>
+                <button id="reset-default-button">重置为游戏默认颜色</button>
+                <button id="output-colors-button">导出当前颜色设置</button>
+                <button id="import-colors-button">导入颜色设置</button>
+                <input type="file" id="import-colors-input" accept=".json" style="display: none;"/>
+                <br />
+                <button id="candy-color-set">糖果色彩预设</button>
+            </div>
+            <div class="tips">
+                <h3>使用提示：</h3>
+                <ul>
+                    <li>选择方块类型后，使用颜色选择器选择您喜欢的颜色。</li>
+                    <li>点击“应用颜色到游戏”按钮，将所选颜色应用到三维扫雷游戏中。</li>
+                    <li>点击“获取当前游戏中颜色设置”按钮，可以加载当前游戏中的颜色设置到调色器中，方便修改。</li>
+                    <li>点击“重置为自定义默认颜色”按钮，可以将颜色设置重置为预设的自定义默认颜色。</li>
+                    <li>点击“重置为游戏默认颜色”按钮，可以将颜色设置重置为游戏的默认颜色。</li>
+                    <li>点击“导出当前颜色设置”按钮，可以将当前的颜色设置导出为JSON文件，方便保存和分享。</li>
+                    <li>点击“导入颜色设置”按钮，可以从JSON文件中导入之前保存的颜色设置。</li>
+                </ul>
+            </div>
+        </div>
+    </main>
+    <script src="js/color_set.js" type="module"></script>
+    <script src="js/menu.js" type="module"></script>
+</body>
+>>>>>>> 338dbc3 (Initial commit: add project files (font/img/music ignored))
 </html>
