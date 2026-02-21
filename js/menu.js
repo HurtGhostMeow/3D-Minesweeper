@@ -409,6 +409,35 @@ try {
 // 初始化页面主题状态
 updateThemeAttribute();
 
+// Apply introduction visibility based on saved settings (and respond to changes)
+function applyIntroduceVisibility(settings) {
+    try {
+        const introEl = document.getElementById('introduction');
+        const main = document.getElementById('main-content');
+        if (!main) return;
+        const show = settings && typeof settings.introduceShow === 'boolean' ? settings.introduceShow : true;
+        // Toggle class on main container so CSS rules (including !important) control layout and transitions
+        try {
+            if (show) main.classList.remove('intro-hidden');
+            else main.classList.add('intro-hidden');
+        } catch (e) {}
+    } catch (e) {}
+}
+
+// Listen for settings changes to toggle introduction visibility
+window.addEventListener('settings-changed', (ev) => {
+    try { applyIntroduceVisibility(ev.detail); } catch (e) {}
+});
+
+// On startup, load saved settings and apply introduce visibility
+try {
+    const saved = localStorage.getItem(SETTINGS_KEY);
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        applyIntroduceVisibility(parsed);
+    }
+} catch (e) {}
+
 // 在加载时根据加载框状态禁用或启用保存和上传按钮,以防止在加载过程中进行这些操作而导致游戏崩溃
 function disabledButtonsDuringLoad() {
     if (document.getElementById('load-box')){

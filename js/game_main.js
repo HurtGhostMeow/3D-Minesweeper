@@ -1,7 +1,7 @@
 // 导入模块
 import { initialGame } from "./game_minesweeper.js";
 import { updateUI, bindUIEvents } from "./game_ui.js";
-import { initGameScene, renderLoop, resizeRenderer } from "./game_renderer.js";
+import { initGameScene, renderLoop, resizeRenderer, sendMeshesToWorker, updateMeshInWorker, removeMeshInWorker, queryPointer, isWorkerActive, postToWorker } from "./game_renderer.js";
 import { highlightModule } from "./show_module.js";
 import * as THREE from 'https://esm.sh/three@0.180.0';
 
@@ -16,9 +16,13 @@ let colorData = [];
 
 let a = null;
 
+// runtime-configurable values updated from settings
+let currentSpacing = 2.2;
+let currentBlockOpacity = 0.3;
+
 // 初始化场景和事件
 const { scene, camera, renderer, raycaster, controls } = initGameScene();
-// 简单的方块容器
+// 简单的方块容器（存放描述符，不再是 THREE.Mesh）
 const cubes = [];
 
 // 初始化 UI 事件绑定
@@ -26,6 +30,41 @@ bindUIEvents(startGame);
 
 // 游戏状态容器
 let gameState;
+let logicWorker = null;
+function ensureLogicWorker() {
+    if (logicWorker) return logicWorker;
+    try {
+        const url = new URL('./game_logic_worker.js', import.meta.url).href;
+        logicWorker = new Worker(url, { type: 'module' });
+        logicWorker.addEventListener('message', (ev) => {
+            // handled per-request via promises below
+            try { window.dispatchEvent(new CustomEvent('logic-worker-event', { detail: ev.data })); } catch (e) {}
+        });
+    } catch (e) { console.error('Failed to create logic worker', e); }
+    return logicWorker;
+}
+
+function postToLogic(msg) {
+    const lw = ensureLogicWorker();
+    try { lw.postMessage(msg); } catch (e) { console.error('logic post failed', e); }
+}
+
+function requestLogic(msg) {
+    return new Promise((resolve, reject) => {
+        const lw = ensureLogicWorker();
+        if (!lw) return reject(new Error('no logic worker'));
+        const reqId = `${Date.now()}_${Math.random()}`;
+        msg.reqId = reqId;
+        function handler(ev) {
+            const data = ev.detail;
+            if (!data || data.reqId !== reqId) return;
+            window.removeEventListener('logic-worker-event', handler);
+            resolve(data);
+        }
+        window.addEventListener('logic-worker-event', handler);
+        try { lw.postMessage(msg); } catch (e) { window.removeEventListener('logic-worker-event', handler); reject(e); }
+    });
+}
 
 // 游戏内的计时器
 function timerTick() {
@@ -92,14 +131,15 @@ function applyColors() {
     }
     
     try {
-        // 更新现有方块材质
-        if (cubes && cubes.length && gameState && gameState.grid) { 
-            let updated = 0;    
-            for (const mesh of cubes) {
-                const d = mesh.userData || {};
+        // 更新现有方块颜色（通过 worker）
+        if (cubes && cubes.length && gameState && gameState.grid) {
+            let updated = 0;
+            for (const desc of cubes) {
+                const d = desc.userData || {};
                 const cell = gameState.grid?.[d.x]?.[d.y]?.[d.z];
                 if (cell) {
-                    mesh.material = getMaterialForCell(cell);
+                    const mat = getMaterialForCell(cell);
+                    updateMeshInWorker({ id: desc.id, color: mat.color, opacity: mat.opacity });
                     updated++;
                 }
             }
@@ -191,25 +231,82 @@ async function startGame(difficulty = 'easy', gridSize = 3, mineCount = 5) {
             return;
         }
 
-        gameState = initialGame(config.size, config.mines);
-        // 如果已经从 localStorage 或上传加载了配色，避免再次 fetch 覆盖
-        if (!colorData || Object.keys(colorData).length === 0) {
-            await getColorData();
+        // 如果 worker 可用，则在 worker 中创建游戏并渲染
+        if (isWorkerActive()) {
+            // prefer: main thread keeps authoritative gameState and uses logic worker for expand
+            gameState = initialGame(config.size, config.mines);
+            if (!colorData || Object.keys(colorData).length === 0) {
+                await getColorData();
+            } else {
+                applyColors();
+            }
+
+            // build mesh descriptors and send to renderer worker
+            const size = config.size;
+            const spacing = currentSpacing;
+            const offset = (size - 1) * spacing / 2;
+            const meshesToSend = [];
+            for (let x = 0; x < size; x++) {
+                for (let y = 0; y < size; y++) {
+                    for (let z = 0; z < size; z++) {
+                        const cell = gameState.grid[x][y][z];
+                        if (cell && cell.isRealved && !cell.isMine && cell.neighborMines === 0) continue;
+                        const id = `${x}_${y}_${z}`;
+                        meshesToSend.push({ id, posX: (x * spacing) - offset, posY: (y * spacing) - offset, posZ: (z * spacing) - offset, color: getMaterialForCell(cell).color, opacity: getMaterialForCell(cell).opacity, userData: { x, y, z } });
+                    }
+                }
+            }
+            try { sendMeshesToWorker(meshesToSend); } catch (e) {}
+            // remember descriptors locally so we can map ids -> userData
+            cubes.length = 0;
+            for (const d of meshesToSend) cubes.push(d);
+
+            // Ensure camera and controls are centered on the grid for a pleasant default view
+            try {
+                const spacing = 2.2;
+                const camDist = Math.max(10, size * spacing);
+                if (controls && controls.target) {
+                    controls.target.set(0, 0, 0);
+                    controls.update && controls.update();
+                }
+                if (camera) {
+                    camera.position.set(camDist, camDist, camDist);
+                    // send camera state to worker so worker camera matches main-thread view
+                    try { postToWorker({ type: 'camera', position: { x: camera.position.x, y: camera.position.y, z: camera.position.z }, lookAt: { x: 0, y: 0, z: 0 } }); } catch (e) {}
+                }
+            } catch (e) { console.error('Failed to center camera after startGame:', e); }
+
+            // update UI and timers
+            updateUI(gameState);
+            clearInterval(window.gameTimer);
+            localStorage.removeItem(GAMESTATE_KEY);
+            document.getElementById('timer').textContent = '0';
+            gameState.timeElapsed = 0;
+            window.gameTimer = setInterval(timerTick, 1000);
+
+            // ensure logic worker available
+            ensureLogicWorker();
         } else {
-            applyColors();
+            gameState = initialGame(config.size, config.mines);
+            // 如果已经从 localStorage 或上传加载了配色，避免再次 fetch 覆盖
+            if (!colorData || Object.keys(colorData).length === 0) {
+                await getColorData();
+            } else {
+                applyColors();
+            }
+
+            // Three.js 场景中渲染方块
+            resetGameGrid(scene, cubes, gameState.grid, config.size);
+
+            // 更新 UI
+            updateUI(gameState);
+            // 重置计时器
+            clearInterval(window.gameTimer);
+            localStorage.removeItem( GAMESTATE_KEY );   // 新游戏开始，移除旧存档
+            document.getElementById('timer').textContent = '0';
+            gameState.timeElapsed = 0;
+            window.gameTimer = setInterval(timerTick, 1000);
         }
-
-        // Three.js 场景中渲染方块
-        resetGameGrid(scene, cubes, gameState.grid, config.size);
-
-        // 更新 UI
-        updateUI(gameState);
-        // 重置计时器
-        clearInterval(window.gameTimer);
-        localStorage.removeItem( GAMESTATE_KEY );   // 新游戏开始，移除旧存档
-        document.getElementById('timer').textContent = '0';
-        gameState.timeElapsed = 0;
-        window.gameTimer = setInterval(timerTick, 1000);
     };
 
     return doStart();
@@ -218,43 +315,119 @@ async function startGame(difficulty = 'easy', gridSize = 3, mineCount = 5) {
 // 框架逻辑
 // 简单的鼠标相交辅助
 function getIntersects(event, objects, camera) {
-    if (!renderer || !renderer.domElement) return [];
-    const rect = renderer.domElement.getBoundingClientRect();   // 获取画布位置和尺寸
-    const mouse = new THREE.Vector2();  // 归一化设备坐标
-    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;   // 转换为 -1 到 +1 之间的坐标，范围适用于 WebGL 坐标系
-    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;  // 注意 Y 轴取反，因为屏幕坐标系与 WebGL 坐标系相反
-    raycaster.setFromCamera(mouse, camera);
-    return raycaster.intersectObjects(objects, false);
+    // 已迁移到 worker，主线程不再直接进行三维射线拾取；保留兼容签名返回空
+    return [];
 }
 
 // 游戏逻辑处理
-function gameLogic(event) {
-    const intersects = getIntersects(event, cubes, camera);
-    if (intersects.length) {
-        const mesh = intersects[0].object;  // 获取第一个相交的对象
-        const { x, y, z } = mesh.userData; // 获取方块数据
+async function gameLogic(event) {
+    try {
+        if (isWorkerActive()) {
+            // use logic worker to compute reveals, then instruct renderer worker to update scene
+            try {
+                const rect = renderer && renderer.domElement ? renderer.domElement.getBoundingClientRect() : null;
+                const res = await queryPointer(event.clientX, event.clientY);
+                if (!res || !res.hit) return;
+                let clicked = null;
+                if (res.object) clicked = res.object.userData;
+                else if (res.id) clicked = (cubes.find(c => c.id === res.id) || {}).userData;
+                if (!clicked) return;
 
-        // 使用 DOM 事件自带的 `detail` 字段判断是否为双击（现代浏览器支持）
-        // event.detail === 2 表示连续第二次点击
+                if (event.type === 'contextmenu') {
+                    // toggle flag via logic worker
+                    const resp = await requestLogic({ type: 'toggleFlag', state: gameState, x: clicked.x, y: clicked.y, z: clicked.z });
+                    if (resp && resp.toggled) {
+                        gameState = resp.state;
+                        updateUI(gameState);
+                        try { localStorage.setItem(GAMESTATE_KEY, JSON.stringify(gameState)); } catch (e) {}
+                        const id = `${clicked.x}_${clicked.y}_${clicked.z}`;
+                        const mat = getMaterialForCell(gameState.grid[clicked.x][clicked.y][clicked.z]);
+                        updateMeshInWorker({ id, color: mat.color, opacity: mat.opacity });
+                    }
+                } else if (event.type === 'click') {
+                    // Single click: only show neighboring mine count (do not reveal)
+                    if (event.detail !== 2) {
+                        // lookup cell and update neighborMines display
+                        const id = `${clicked.x}_${clicked.y}_${clicked.z}`;
+                        const cell = gameState.grid?.[clicked.x]?.[clicked.y]?.[clicked.z];
+                        if (cell) {
+                            const el = document.getElementById('neighborMines');
+                            if (el) {
+                                if (cell.isRealved) el.innerText = cell.neighborMines;
+                                else el.innerText = '翻开它，得到它的秘密吧！=￣ω￣=';
+                            }
+                        }
+                    } else {
+                        // Double-click: expand/flood-reveal
+                        const resp = await requestLogic({ type: 'expand', state: gameState, x: clicked.x, y: clicked.y, z: clicked.z });
+                        if (resp && resp.reveals && resp.reveals.length) {
+                            console.log('Logic worker expanded', resp.reveals.length, 'cells');
+                            gameState = resp.state;
+                            // apply visual updates: remove empty cubes, update non-empty materials
+                            let revealedMine = false;
+                            for (const rc of resp.reveals) {
+                                const id = `${rc.x}_${rc.y}_${rc.z}`;
+                                const cell = gameState.grid?.[rc.x]?.[rc.y]?.[rc.z];
+                                const idx = cubes.findIndex(c => c.id === id);
+                                if (cell && cell.isMine && cell.isRealved) revealedMine = true;
+                                    if (cell && !cell.isMine && cell.neighborMines === 0) {
+                                        if (idx !== -1) { removeMeshInWorker(id); cubes.splice(idx, 1); }
+                                    } else {
+                                    const mat = getMaterialForCell(cell);
+                                    updateMeshInWorker({ id, color: mat.color, opacity: mat.opacity });
+                                }
+                            }
+                            // if a mine was revealed, reveal all mines visually and mark game over
+                                if (revealedMine) {
+                                    gameState.gameOver = true;
+                                    revealAllCells(gameState);
+                                }
+                            updateUI(gameState);
+                            try { localStorage.setItem(GAMESTATE_KEY, JSON.stringify(gameState)); } catch (e) {}
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('logic worker handling failed', e);
+            }
+            return;
+        }
+
+        const res = await queryPointer(event.clientX, event.clientY);
+        if (!res || !res.hit) return;
+
+        let meshDesc = null;
+        let meshObj = null;
+        if (res.object) {
+            meshObj = res.object; // THREE.Mesh from main-thread fallback
+            meshDesc = meshObj;   // pass through
+        } else if (res.id) {
+            meshDesc = cubes.find(c => c.id === res.id);
+        }
+        if (!meshDesc) return;
+        const { x, y, z } = (meshDesc.userData || {});
+
         if (event.type === 'click') {
             if (event.detail === 2) {
                 lightMinesweeper.lightWithToggle(() => {
-                    revealCell(gameState, mesh, x, y, z);   // 翻开方块
+                    revealCell(gameState, meshDesc, x, y, z);
                 });
             } else {
-                lightMinesweeper.lightWithToggle(() => {    //查看邻居雷数量
+                lightMinesweeper.lightWithToggle(() => {
                     if (gameState.grid[x][y][z].isRealved) {
                         document.getElementById('neighborMines').innerText = gameState.grid[x][y][z].neighborMines;
-                    }else{
+                    } else {
                         document.getElementById('neighborMines').innerText = '翻开它，得到它的秘密吧！=￣ω￣=';
                     }
                 });
             }
         } else if (event.type === 'contextmenu') {
-            toggleFlag(gameState, mesh, x, y, z); // 标记地雷逻辑
+            toggleFlag(gameState, meshDesc, x, y, z);
         }
 
-        updateUI(gameState); // 刷新界面
+        updateUI(gameState);
+    } catch (e) {
+        console.error('gameLogic error', e);
     }
 }
 
@@ -262,30 +435,50 @@ function gameLogic(event) {
 function resetGameGrid(scene, cubesArr, grid, size) {
     // 清理已有方块，避免重复渲染
     while (cubesArr.length) {
-        const m = cubesArr.pop();   // 从数组中移除最后一个元素并返回它的引用
-        if (m.parent) m.parent.remove(m);
+        const m = cubesArr.pop();
+        try {
+            if (isWorkerActive()) removeMeshInWorker(m.id);
+            else if (m.parent) m.parent.remove(m);
+        } catch (e) {}
     }
 
-    const spacing = 2.2;    // 方块间距
+    const spacing = currentSpacing;    // 方块间距
     const offset = (size - 1) * spacing / 2;    // 居中偏移量，使网格居中显示
 
-    const boxGeo = new THREE.BoxGeometry(1.8, 1.8, 1.8);    // 方块几何体
+    if (isWorkerActive()) {
+        const meshesToSend = [];
+        for (let x = 0; x < size; x++) {
+            for (let y = 0; y < size; y++) {
+                for (let z = 0; z < size; z++) {
+                    const cell = grid[x][y][z];
+                    if (cell && cell.isRealved && !cell.isMine && cell.neighborMines === 0) continue;
 
-    for (let x = 0; x < size; x++) {
-        for (let y = 0; y < size; y++) {
-            for (let z = 0; z < size; z++) {
-                const cell = grid[x][y][z];
-                // 如果格子已经被揭示且没有邻居雷，原逻辑会把该格从场景中移除，
-                // 因此在恢复存档时也应跳过创建对应的 mesh
-                if (cell && cell.isRealved && cell.neighborMines === 0) {
-                    continue;
+                    const id = `${x}_${y}_${z}`;
+                    const posX = (x * spacing) - offset;
+                    const posY = (y * spacing) - offset;
+                    const posZ = (z * spacing) - offset;
+                    const mat = getMaterialForCell(cell);
+                    const desc = { id, posX, posY, posZ, color: mat.color, opacity: mat.opacity, userData: { x, y, z } };
+                    cubesArr.push(desc);
+                    meshesToSend.push(desc);
                 }
+            }
+        }
+        try { sendMeshesToWorker(meshesToSend); } catch (e) {}
+    } else {
+        const boxGeo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
+        for (let x = 0; x < size; x++) {
+            for (let y = 0; y < size; y++) {
+                for (let z = 0; z < size; z++) {
+                    const cell = grid[x][y][z];
+                    if (cell && cell.isRealved && cell.neighborMines === 0) continue;
 
-                const mesh = new THREE.Mesh(boxGeo, getMaterialForCell(cell));  // 创建方块网格
-                mesh.position.set((x * spacing) - offset, (y * spacing) - offset, (z * spacing) - offset);  // 设置位置
-                mesh.userData = { x, y, z };    // 存储方块坐标数据
-                scene.add(mesh);    // 添加到场景
-                cubesArr.push(mesh);    // 添加到方块数组
+                    const mesh = new THREE.Mesh(boxGeo, getMaterialForCell(cell));
+                    mesh.position.set((x * spacing) - offset, (y * spacing) - offset, (z * spacing) - offset);
+                    mesh.userData = { x, y, z };
+                    scene.add(mesh);
+                    cubesArr.push(mesh);
+                }
             }
         }
     }
@@ -293,44 +486,49 @@ function resetGameGrid(scene, cubesArr, grid, size) {
 }
 
 // 翻开方块的最简逻辑：改变颜色并更新状态
-function revealCell(gameState, mesh, x, y, z) {
+function revealCell(gameState, meshDesc, x, y, z) {
     const cell = gameState.grid[x][y][z];
     if (cell.isRealved || cell.isFlagged) return;
     cell.isRealved = true;
     localStorage.setItem( GAMESTATE_KEY, JSON.stringify(gameState) );
-    
+
     gameState.realved = (gameState.realved || 0) + 1;
     if (cell.isMine) {
         gameState.gameOver = true;
-        
-        if (mesh && mesh.material) mesh.material = getMaterialForCell(cell);
-
-        // 显示所有地雷
-        const sizeAll = gameState.grid.length;
-        for (let ax = 0; ax < sizeAll; ax++) {
-            for (let ay = 0; ay < sizeAll; ay++) {
-                for (let az = 0; az < sizeAll; az++) {
-                    const c = gameState.grid[ax]?.[ay]?.[az];
-                    if (c && c.isMine && !c.isRealved) {
-                        c.isRealved = true;
-                        const mineMesh = cubes.find(m => {  // 找到对应的方块 mesh
-                            const d = m.userData || {};
-                            localStorage.removeItem( GAMESTATE_KEY );
-                            return d.x === ax && d.y === ay && d.z === az;
-                        });
-                        if (mineMesh && mineMesh.material) mineMesh.material = getMaterialForCell(c);
+        if (meshDesc) {
+            const mat = getMaterialForCell(cell);
+            if (isWorkerActive()) {
+                updateMeshInWorker({ id: meshDesc.id, color: mat.color, opacity: mat.opacity });
+            } else {
+                // meshDesc is actual THREE.Mesh in fallback
+                try {
+                    if (cell.isMine) {
+                        meshDesc.material = new THREE.MeshStandardMaterial({ color: mat.color || 0xff4444 });
+                    } else if (!cell.isRealved) {
+                        meshDesc.material = new THREE.MeshStandardMaterial({ color: mat.color || 0x999999 });
+                    } else {
+                        meshDesc.material = new THREE.MeshPhongMaterial({ color: mat.color, opacity: mat.opacity, transparent: mat.opacity < 1, side: THREE.DoubleSide });
                     }
-                }
+                } catch (e) {}
             }
         }
+
+        // reveal all mines visually
+        revealAllMines(gameState);
 
         return;
     }
     gameWonCheck(gameState);
 
-    // 如果没有邻居雷：先将当前格显示为已揭示，然后递归揭示邻居，最后从场景中移除当前格
     if (cell.neighborMines === 0) {
-        if (mesh && mesh.material) mesh.material = getMaterialForCell(cell);
+        if (meshDesc) {
+            const mat = getMaterialForCell(cell);
+            if (isWorkerActive()) {
+                updateMeshInWorker({ id: meshDesc.id, color: mat.color, opacity: mat.opacity });
+            } else {
+                try { meshDesc.material = new THREE.MeshPhongMaterial({ color: mat.color, opacity: mat.opacity, transparent: mat.opacity < 1, side: THREE.DoubleSide }); } catch (e) {}
+            }
+        }
 
         const directions = [-1, 0, 1];
         for (let dx of directions) {
@@ -338,29 +536,32 @@ function revealCell(gameState, mesh, x, y, z) {
                 for (let dz of directions) {
                     const [nx, ny, nz] = [x + dx, y + dy, z + dz];
                     if (nx >= 0 && ny >= 0 && nz >= 0 && nx < gameState.grid.length && ny < gameState.grid.length && nz < gameState.grid.length) {
-                        const neighborMesh = cubes.find(m => {  // 找到邻居方块 mesh
+                        const neighborDesc = cubes.find(m => {
                             const d = m.userData || {};
                             return d.x === nx && d.y === ny && d.z === nz;
                         });
-                        revealCell(gameState, neighborMesh, nx, ny, nz);
+                        revealCell(gameState, neighborDesc, nx, ny, nz);
                     }
                 }
             }
         }
 
-        // 递归完成后，从场景与 cubes 数组中移除当前 mesh，使其“消失”并不可交互
-        if (mesh) {
+        if (meshDesc) {
             try { console.log('revealCell: removing mesh', { x, y, z }); } catch (e) {}
-            if (mesh.parent) mesh.parent.remove(mesh);  // 从场景中移除
-            const idx = cubes.indexOf(mesh);
+            if (isWorkerActive()) {
+                try { removeMeshInWorker(meshDesc.id); } catch (e) {}
+            } else {
+                try { if (meshDesc.parent) meshDesc.parent.remove(meshDesc); } catch (e) {}
+            }
+            const idx = cubes.indexOf(meshDesc);
             if (idx !== -1) cubes.splice(idx, 1);
         }
         return;
     }
 
-    // 有邻居雷：显示为已揭示但保留方块
-    if (mesh && mesh.material) {
-        mesh.material = getMaterialForCell(cell);
+    if (meshDesc) {
+        const mat = getMaterialForCell(cell);
+        updateMeshInWorker({ id: meshDesc.id, color: mat.color, opacity: mat.opacity });
     }
 }
 
@@ -382,37 +583,39 @@ function getMaterialForCell(cell) {
         return val;
     };
 
+    // 返回简化材质描述（颜色与不透明度），由 worker 使用该信息创建/更新材质
     if (!cell.isRealved) {
         if (cell.isFlagged) {
-            return new THREE.MeshStandardMaterial({ color: getColor('flag') || 0x4444ff });
+            return { color: getColor('flag') || 0x4444ff, opacity: 1 };
         }
-        return new THREE.MeshStandardMaterial({ color: getColor('hidden') || 0x999999 });
+        return { color: getColor('hidden') || 0x999999, opacity: 1 };
     }
 
     if (cell.isMine) {
-        return new THREE.MeshStandardMaterial({ color: getColor('mine') || 0xff4444 });
+        return { color: getColor('mine') || 0xff4444, opacity: 1 };
     }
 
-    // 已揭示的数字格
     const color = getColor(cell.neighborMines.toString()) || getColor();
-    return new THREE.MeshPhongMaterial({
-        color: color,
-        opacity: cell.neighborMines === 0 ? 0.0 : 0.3,
-        transparent: !cell.isMine && !cell.isFlagged,
-        side: THREE.DoubleSide
-    });
+    return { color: color, opacity: (cell.neighborMines === 0 ? 0.0 : currentBlockOpacity) };
 }
 
 // 切换标记
-function toggleFlag(gameState, mesh, x, y, z) {
+function toggleFlag(gameState, meshDesc, x, y, z) {
     const cell = gameState.grid[x][y][z];
     if (cell.isRealved) return;
     cell.isFlagged = !cell.isFlagged;
-    mesh.material = getMaterialForCell(cell);
+    const mat = getMaterialForCell(cell);
+    if (meshDesc) {
+        if (isWorkerActive()) {
+            try { updateMeshInWorker({ id: meshDesc.id, color: mat.color, opacity: mat.opacity }); } catch (e) {}
+        } else {
+            try { meshDesc.material = new THREE.MeshPhongMaterial({ color: mat.color, opacity: mat.opacity, transparent: mat.opacity < 1, side: THREE.DoubleSide }); } catch (e) {}
+        }
+    }
     if (cell.isFlagged) {
-        gameState.flagged = (gameState.flagged || 0) + 1;  // 增加标记计数
+        gameState.flagged = (gameState.flagged || 0) + 1;
     } else {
-        gameState.flagged = Math.max(0, (gameState.flagged || 0) - 1);  // 减少标记计数
+        gameState.flagged = Math.max(0, (gameState.flagged || 0) - 1);
     }
 }
 
@@ -428,6 +631,43 @@ function gameWonCheck(gameState) {
         document.getElementById('timer').textContent = gameState.timeElapsed;
         localStorage.removeItem( GAMESTATE_KEY );
     }
+}
+
+// Reveal every cell on the board (used when a mine is triggered)
+function revealAllCells(state) {
+    try {
+        const N = state.length || (state.grid && state.grid.length) || 0;
+        // only mark mines as revealed; do not reveal non-mine cells
+        for (let ax = 0; ax < N; ax++) for (let ay = 0; ay < N; ay++) for (let az = 0; az < N; az++) {
+            const c = state.grid?.[ax]?.[ay]?.[az];
+            if (c && c.isMine) c.isRealved = true;
+        }
+
+        const spacing = 2.2;
+        const offset = (N - 1) * spacing / 2;
+        const meshesToSend = [];
+        for (let ax = 0; ax < N; ax++) {
+            for (let ay = 0; ay < N; ay++) {
+                for (let az = 0; az < N; az++) {
+                    const c = state.grid?.[ax]?.[ay]?.[az];
+                    if (!c) continue;
+                    // show everything except empty non-mine that should be visually removed
+                    if (c.isRealved && !c.isMine && c.neighborMines === 0) continue;
+                    const id = `${ax}_${ay}_${az}`;
+                    const mat = getMaterialForCell(c);
+                    meshesToSend.push({ id, posX: (ax * spacing) - offset, posY: (ay * spacing) - offset, posZ: (az * spacing) - offset, color: mat.color, opacity: mat.opacity, userData: { x: ax, y: ay, z: az } });
+                }
+            }
+        }
+
+        if (isWorkerActive()) {
+            try { sendMeshesToWorker(meshesToSend); } catch (e) { console.error('sendMeshesToWorker failed in revealAllCells', e); }
+            cubes.length = 0;
+            for (const d of meshesToSend) cubes.push(d);
+        } else {
+            try { resetGameGrid(scene, cubes, state.grid, N); } catch (e) { console.error('resetGameGrid failed in revealAllCells', e); }
+        }
+    } catch (e) { console.error('revealAllCells failed', e); }
 }
 
 console.info("%c别作弊我跟你说，源代码都在控制台里呢~", "background: linear-gradient(90deg, #a9ddf5 50%, #7a8be8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; color: transparent; font-weight: bold;","🤣");
@@ -549,6 +789,13 @@ try{
                 // 重新渲染场景并更新 UI，使存档真正恢复到画面上
                 const gridSize = gameState.length || (gameState.grid && gameState.grid.length) || 0;
                 resetGameGrid(scene, cubes, gameState.grid, gridSize);
+                // center camera on restored grid
+                try {
+                    const spacing = 2.2;
+                    const camDist = Math.max(10, gridSize * spacing);
+                    if (controls && controls.target) { controls.target.set(0,0,0); controls.update && controls.update(); }
+                    if (camera) { camera.position.set(camDist, camDist, camDist); try { postToWorker({ type: 'camera', position: { x: camera.position.x, y: camera.position.y, z: camera.position.z }, lookAt: { x:0,y:0,z:0 } }); } catch(e){} }
+                } catch(e) {}
                 updateUI(gameState);
 
                 // 恢复计时器显示与运行
@@ -573,6 +820,20 @@ try{
 applyColors();  // 应用颜色数据
 resizeRenderer(renderer, camera);   // 初始调整渲染器大小
 window.addEventListener('resize', () => resizeRenderer(renderer, camera));  // 监听窗口大小变化调整渲染器
+
+// Apply settings changes at runtime
+window.addEventListener('settings-changed', (ev) => {
+    try {
+        const s = ev && ev.detail ? ev.detail : {};
+        if (typeof s.spacing === 'number') currentSpacing = s.spacing;
+        if (typeof s.blockOpacity === 'number') currentBlockOpacity = s.blockOpacity;
+        // Rebuild or update visuals to reflect new spacing/opacity
+        if (gameState) {
+            try { resetGameGrid(scene, cubes, gameState.grid, gameState.length || (gameState.grid && gameState.grid.length) || 0); } catch (e) {}
+            updateUI(gameState);
+        }
+    } catch (e) { console.error('Failed to apply settings-changed in game_main', e); }
+});
 
 //自动存档
 setInterval(() => {
