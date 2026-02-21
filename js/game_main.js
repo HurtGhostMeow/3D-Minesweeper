@@ -382,6 +382,8 @@ async function gameLogic(event) {
                                     gameState.gameOver = true;
                                     revealAllCells(gameState);
                                 }
+                            // 检查是否已满足胜利条件（例如通过自动展开流程导致所有非雷格子已被翻开）
+                            try { gameWonCheck(gameState); } catch (e) { console.error('gameWonCheck failed', e); }
                             updateUI(gameState);
                             try { localStorage.setItem(GAMESTATE_KEY, JSON.stringify(gameState)); } catch (e) {}
                         }
