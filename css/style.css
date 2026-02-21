@@ -532,4 +532,16 @@ input:invalid {
         overflow-wrap: anywhere;
     }
 
+    #main-content.intro-hidden #game-box,
+    #main-content.intro-hidden #introduction {
+        width: 90vw !important;
+        max-width: 90vw !important;
+        flex: 0 0 auto !important;
+        flex-basis: auto !important;
+        opacity: 1 !important;
+        transform: none !important;
+        max-height: none !important;
+        pointer-events: auto !important;
+        margin: 2vh 1vw !important;
+    }
 }
