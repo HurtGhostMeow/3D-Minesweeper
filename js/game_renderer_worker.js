@@ -1,10 +1,10 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
 import { initialGame } from './game_minesweeper.js';
 
-// Worker loaded
+// Worker 已加载
 try { self.postMessage && self.postMessage({ type: 'worker-loaded' }); } catch (e) {}
 
-// Global error handlers to surface issues to main thread
+// 全局错误处理器，将问题上报给主线程
 self.addEventListener('error', (err) => {
     try { self.postMessage({ type: 'worker-error', message: err.message, filename: err.filename, lineno: err.lineno }); } catch (e) {}
 });
@@ -24,9 +24,9 @@ self.addEventListener('message', async (ev) => {
         switch (msg.type) {
             case 'init': {
                 const offscreen = msg.canvas;
-                // keep a reference to the OffscreenCanvas for resize fallback
+                // 保留对 OffscreenCanvas 的引用以在重置大小时回退
                 canvas = offscreen;
-                // msg.width/msg.height are logical (CSS) pixels
+                // msg.width/msg.height 为逻辑（CSS）像素
                 canvasWidth = msg.width || 800;
                 canvasHeight = msg.height || 600;
                 devicePixelRatio = msg.devicePixelRatio || 1;
@@ -38,20 +38,20 @@ self.addEventListener('message', async (ev) => {
                 const context = offscreen.getContext('webgl2', { antialias: true }) || offscreen.getContext('webgl', { antialias: true });
                 renderer = new THREE.WebGLRenderer({ canvas: offscreen, context, antialias: true, alpha: true });
                 try {
-                    // prefer renderer API when available
-                    // renderer.setSize expects drawing buffer size: use logical * DPR
+                    // 优先使用 renderer API（如果可用）
+                    // renderer.setSize 期望绘图缓冲区尺寸：使用 逻辑 * DPR
                     const drawW = Math.max(1, Math.floor(canvasWidth * devicePixelRatio));
                     const drawH = Math.max(1, Math.floor(canvasHeight * devicePixelRatio));
                     renderer.setPixelRatio(devicePixelRatio);
                     renderer.setSize(drawW, drawH, false);
-                    // ensure transparent background
+                    // 确保透明背景
                     try { if (renderer.setClearColor) renderer.setClearColor(0x000000, 0); } catch (e) {}
                 } catch (e) {
-                    // fallback: directly set OffscreenCanvas size if renderer internals are not ready
+                    // 回退：如果 renderer 未就绪则直接设置 OffscreenCanvas 尺寸
                     try { if (canvas) { canvas.width = Math.max(1, Math.floor(canvasWidth * devicePixelRatio)); canvas.height = Math.max(1, Math.floor(canvasHeight * devicePixelRatio)); } } catch (e) {}
                 }
 
-                // basic lights
+                // 基本灯光
                 const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
                 scene.add(ambientLight);
                 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -60,7 +60,7 @@ self.addEventListener('message', async (ev) => {
 
                 self.postMessage({ type: 'inited' });
                 try {
-                    // report initial drawing buffer size for debugging
+                    // 报告初始绘图缓冲区尺寸以便调试
                     const drawW = Math.max(1, Math.floor(canvasWidth * devicePixelRatio));
                     const drawH = Math.max(1, Math.floor(canvasHeight * devicePixelRatio));
                     self.postMessage({ type: 'debug-resize', drawW, drawH, devicePixelRatio });
@@ -68,13 +68,13 @@ self.addEventListener('message', async (ev) => {
                 break;
             }
             case 'setMeshes': {
-                // replace scene children with provided simple meshes
-                // expected mesh format: { id, x,y,z, color, opacity }
-                // remove previous mesh group
+                // 使用提供的简化网格替换场景子对象
+                // 期望的网格格式：{ id, x,y,z, color, opacity }
+                // 移除之前的网格组
                 while (scene.children.length > 0) {
                     scene.remove(scene.children[0]);
                 }
-                // re-add lights (simple approach)
+                // 重新添加灯光（简单处理）
                 const ambient = new THREE.AmbientLight(0xffffff, 0.6);
                 scene.add(ambient);
                 const dir = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -96,7 +96,7 @@ self.addEventListener('message', async (ev) => {
                 break;
             }
             case 'updateMesh': {
-                // find by __id
+                // 按 __id 查找
                 const id = msg.id;
                 const found = scene.children.find(c => c.userData && c.userData.__id === id);
                 if (found) {
@@ -118,7 +118,7 @@ self.addEventListener('message', async (ev) => {
                 break;
             }
             case 'resize': {
-                // msg.width/msg.height are logical (CSS) pixels
+                // msg.width/msg.height 为逻辑（CSS）像素
                 canvasWidth = msg.width;
                 canvasHeight = msg.height;
                 devicePixelRatio = msg.devicePixelRatio || devicePixelRatio || 1;
@@ -126,7 +126,7 @@ self.addEventListener('message', async (ev) => {
                     camera.aspect = canvasWidth / canvasHeight;
                     camera.updateProjectionMatrix();
                 }
-                // try renderer.setSize, otherwise set canvas width/height directly
+                // 尝试 renderer.setSize，否则直接设置 canvas 宽高
                 try {
                     if (renderer && renderer.setSize) {
                         const drawW = Math.max(1, Math.floor(canvasWidth * devicePixelRatio));
@@ -141,7 +141,7 @@ self.addEventListener('message', async (ev) => {
                 break;
             }
             case 'camera': {
-                // accept camera matrix/position
+                // 接受相机矩阵/位置
                 if (msg.matrix) {
                     camera.matrix.fromArray(msg.matrix);
                     camera.matrix.decompose(camera.position, camera.quaternion, camera.scale);
@@ -159,7 +159,7 @@ self.addEventListener('message', async (ev) => {
                 const mines = msg.mines || 3;
                 gameState = initialGame(size, mines);
 
-                // clear non-light children
+                // 清除非灯光子对象
                 scene.children = scene.children.filter(c => (c.type && (c.type === 'AmbientLight' || c.type === 'DirectionalLight')));
                 const boxGeo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
                 const spacing = 2.2;
@@ -187,11 +187,11 @@ self.addEventListener('message', async (ev) => {
                 break;
             }
 
-            // Note: pointer-action previously modified gameState inside the renderer worker.
-            // The renderer should not mutate authoritative gameState; input handling belongs on main/logic worker.
-            // We keep pointer->hit detection in the 'pointer' message case and do not mutate state here.
+            // 注意：之前的 pointer-action 会在渲染 worker 内修改 gameState
+            // 渲染器不应修改权威的 gameState；输入处理应由主线程/逻辑 worker 负责。
+            // 我们在 'pointer' 消息中保留命中检测，但不在此处修改状态。
             case 'pointer': {
-                // perform raycast
+                // 执行射线检测
                 const rect = msg.rect || { left: 0, top: 0, width: canvasWidth, height: canvasHeight };
                 const x = ((msg.clientX - rect.left) / rect.width) * 2 - 1;
                 const y = -((msg.clientY - rect.top) / rect.height) * 2 + 1;
@@ -208,7 +208,7 @@ self.addEventListener('message', async (ev) => {
                 break;
             }
             case 'start': {
-                // start simple loop
+                // 启动简单循环
                 let running = true;
                 const raf = (typeof self.requestAnimationFrame === 'function') ? ((fn) => self.requestAnimationFrame(fn)) : ((fn) => setTimeout(fn, 16));
                 const loop = () => {

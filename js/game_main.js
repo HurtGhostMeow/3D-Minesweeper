@@ -16,7 +16,7 @@ let colorData = [];
 
 let a = null;
 
-// runtime-configurable values updated from settings
+// 运行时可配置的值（由设置更新）
 let currentSpacing = 2.2;
 let currentBlockOpacity = 0.3;
 
@@ -37,7 +37,7 @@ function ensureLogicWorker() {
         const url = new URL('./game_logic_worker.js', import.meta.url).href;
         logicWorker = new Worker(url, { type: 'module' });
         logicWorker.addEventListener('message', (ev) => {
-            // handled per-request via promises below
+            // 通过下面的 promise 按请求处理回复
             try { window.dispatchEvent(new CustomEvent('logic-worker-event', { detail: ev.data })); } catch (e) {}
         });
     } catch (e) { console.error('Failed to create logic worker', e); }
@@ -233,7 +233,7 @@ async function startGame(difficulty = 'easy', gridSize = 3, mineCount = 5) {
 
         // 如果 worker 可用，则在 worker 中创建游戏并渲染
         if (isWorkerActive()) {
-            // prefer: main thread keeps authoritative gameState and uses logic worker for expand
+            // 首选：主线程保持权威的 gameState，使用逻辑 worker 进行展开计算
             gameState = initialGame(config.size, config.mines);
             if (!colorData || Object.keys(colorData).length === 0) {
                 await getColorData();
@@ -241,7 +241,7 @@ async function startGame(difficulty = 'easy', gridSize = 3, mineCount = 5) {
                 applyColors();
             }
 
-            // build mesh descriptors and send to renderer worker
+            // 构建网格描述符并发送到渲染器 worker
             const size = config.size;
             const spacing = currentSpacing;
             const offset = (size - 1) * spacing / 2;
@@ -257,11 +257,11 @@ async function startGame(difficulty = 'easy', gridSize = 3, mineCount = 5) {
                 }
             }
             try { sendMeshesToWorker(meshesToSend); } catch (e) {}
-            // remember descriptors locally so we can map ids -> userData
+            // 本地保存描述符，以便将 id 映射到 userData
             cubes.length = 0;
             for (const d of meshesToSend) cubes.push(d);
 
-            // Ensure camera and controls are centered on the grid for a pleasant default view
+            // 确保相机和控制器以网格中心为默认视角，提供良好的初始观察角度
             try {
                 const spacing = 2.2;
                 const camDist = Math.max(10, size * spacing);
@@ -271,12 +271,12 @@ async function startGame(difficulty = 'easy', gridSize = 3, mineCount = 5) {
                 }
                 if (camera) {
                     camera.position.set(camDist, camDist, camDist);
-                    // send camera state to worker so worker camera matches main-thread view
+                    // 将相机状态发送到 worker，确保 worker 的相机与主线程视图一致
                     try { postToWorker({ type: 'camera', position: { x: camera.position.x, y: camera.position.y, z: camera.position.z }, lookAt: { x: 0, y: 0, z: 0 } }); } catch (e) {}
                 }
             } catch (e) { console.error('Failed to center camera after startGame:', e); }
 
-            // update UI and timers
+            // 更新 UI 与计时器
             updateUI(gameState);
             clearInterval(window.gameTimer);
             localStorage.removeItem(GAMESTATE_KEY);
@@ -284,7 +284,7 @@ async function startGame(difficulty = 'easy', gridSize = 3, mineCount = 5) {
             gameState.timeElapsed = 0;
             window.gameTimer = setInterval(timerTick, 1000);
 
-            // ensure logic worker available
+            // 确保逻辑 worker 可用
             ensureLogicWorker();
         } else {
             gameState = initialGame(config.size, config.mines);
@@ -315,7 +315,7 @@ async function startGame(difficulty = 'easy', gridSize = 3, mineCount = 5) {
 // 框架逻辑
 // 简单的鼠标相交辅助
 function getIntersects(event, objects, camera) {
-    // 已迁移到 worker，主线程不再直接进行三维射线拾取；保留兼容签名返回空
+    // 已迁移到 worker：主线程不再直接进行三维射线拾取；此处保留兼容签名并返回空
     return [];
 }
 
@@ -323,7 +323,7 @@ function getIntersects(event, objects, camera) {
 async function gameLogic(event) {
     try {
         if (isWorkerActive()) {
-            // use logic worker to compute reveals, then instruct renderer worker to update scene
+            // 使用逻辑 worker 计算需要翻开的格子，然后指示渲染器 worker 更新场景
             try {
                 const rect = renderer && renderer.domElement ? renderer.domElement.getBoundingClientRect() : null;
                 const res = await queryPointer(event.clientX, event.clientY);
@@ -334,7 +334,7 @@ async function gameLogic(event) {
                 if (!clicked) return;
 
                 if (event.type === 'contextmenu') {
-                    // toggle flag via logic worker
+                    // 通过逻辑 worker 切换标记（旗帜）状态
                     const resp = await requestLogic({ type: 'toggleFlag', state: gameState, x: clicked.x, y: clicked.y, z: clicked.z });
                     if (resp && resp.toggled) {
                         gameState = resp.state;
@@ -345,9 +345,9 @@ async function gameLogic(event) {
                         updateMeshInWorker({ id, color: mat.color, opacity: mat.opacity });
                     }
                 } else if (event.type === 'click') {
-                    // Single click: only show neighboring mine count (do not reveal)
+                    // 单击：仅显示周围的地雷数量（不翻开格子）
                     if (event.detail !== 2) {
-                        // lookup cell and update neighborMines display
+                        // 查找格子并更新邻居雷数的显示
                         const id = `${clicked.x}_${clicked.y}_${clicked.z}`;
                         const cell = gameState.grid?.[clicked.x]?.[clicked.y]?.[clicked.z];
                         if (cell) {
@@ -358,12 +358,12 @@ async function gameLogic(event) {
                             }
                         }
                     } else {
-                        // Double-click: expand/flood-reveal
+                        // 双击：展开 / 洪水式翻开
                         const resp = await requestLogic({ type: 'expand', state: gameState, x: clicked.x, y: clicked.y, z: clicked.z });
                         if (resp && resp.reveals && resp.reveals.length) {
                             console.log('Logic worker expanded', resp.reveals.length, 'cells');
                             gameState = resp.state;
-                            // apply visual updates: remove empty cubes, update non-empty materials
+                            // 应用视觉更新：移除空白方块，更新非空方块的材质
                             let revealedMine = false;
                             for (const rc of resp.reveals) {
                                 const id = `${rc.x}_${rc.y}_${rc.z}`;
@@ -377,7 +377,7 @@ async function gameLogic(event) {
                                     updateMeshInWorker({ id, color: mat.color, opacity: mat.opacity });
                                 }
                             }
-                            // if a mine was revealed, reveal all mines visually and mark game over
+                            // 如果翻开到雷，显示所有雷并将游戏标记为结束
                                 if (revealedMine) {
                                     gameState.gameOver = true;
                                     revealAllCells(gameState);
@@ -386,6 +386,8 @@ async function gameLogic(event) {
                             try { gameWonCheck(gameState); } catch (e) { console.error('gameWonCheck failed', e); }
                             updateUI(gameState);
                             try { localStorage.setItem(GAMESTATE_KEY, JSON.stringify(gameState)); } catch (e) {}
+
+                            if (gameState.gameOver) localStorage.removeItem(GAMESTATE_KEY);
                         }
                     }
                 }
@@ -401,8 +403,8 @@ async function gameLogic(event) {
         let meshDesc = null;
         let meshObj = null;
         if (res.object) {
-            meshObj = res.object; // THREE.Mesh from main-thread fallback
-            meshDesc = meshObj;   // pass through
+            meshObj = res.object; // 主线程回退时的 THREE.Mesh
+            meshDesc = meshObj;   // 直接传递
         } else if (res.id) {
             meshDesc = cubes.find(c => c.id === res.id);
         }
@@ -515,8 +517,9 @@ function revealCell(gameState, meshDesc, x, y, z) {
             }
         }
 
-        // reveal all mines visually
-        revealAllMines(gameState);
+        // 可视化显示所有雷并移除本地存档
+        revealAllCells(gameState);
+        try { localStorage.removeItem(GAMESTATE_KEY); } catch (e) {}
 
         return;
     }
@@ -635,11 +638,11 @@ function gameWonCheck(gameState) {
     }
 }
 
-// Reveal every cell on the board (used when a mine is triggered)
+// 在棋盘上显示所有格子（当触雷时使用）
 function revealAllCells(state) {
     try {
         const N = state.length || (state.grid && state.grid.length) || 0;
-        // only mark mines as revealed; do not reveal non-mine cells
+        // 仅标记雷为已翻开；不要翻开非雷格子
         for (let ax = 0; ax < N; ax++) for (let ay = 0; ay < N; ay++) for (let az = 0; az < N; az++) {
             const c = state.grid?.[ax]?.[ay]?.[az];
             if (c && c.isMine) c.isRealved = true;
@@ -653,7 +656,7 @@ function revealAllCells(state) {
                 for (let az = 0; az < N; az++) {
                     const c = state.grid?.[ax]?.[ay]?.[az];
                     if (!c) continue;
-                    // show everything except empty non-mine that should be visually removed
+                    // 显示所有格子，除应被移除的无邻雷非雷格子
                     if (c.isRealved && !c.isMine && c.neighborMines === 0) continue;
                     const id = `${ax}_${ay}_${az}`;
                     const mat = getMaterialForCell(c);
@@ -823,13 +826,13 @@ applyColors();  // 应用颜色数据
 resizeRenderer(renderer, camera);   // 初始调整渲染器大小
 window.addEventListener('resize', () => resizeRenderer(renderer, camera));  // 监听窗口大小变化调整渲染器
 
-// Apply settings changes at runtime
+// 在运行时应用设置变更
 window.addEventListener('settings-changed', (ev) => {
     try {
         const s = ev && ev.detail ? ev.detail : {};
         if (typeof s.spacing === 'number') currentSpacing = s.spacing;
         if (typeof s.blockOpacity === 'number') currentBlockOpacity = s.blockOpacity;
-        // Rebuild or update visuals to reflect new spacing/opacity
+        // 重新构建或更新视觉以反映新的间距/不透明度
         if (gameState) {
             try { resetGameGrid(scene, cubes, gameState.grid, gameState.length || (gameState.grid && gameState.grid.length) || 0); } catch (e) {}
             updateUI(gameState);

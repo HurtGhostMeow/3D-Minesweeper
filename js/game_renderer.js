@@ -35,12 +35,12 @@ function ensureWorker(canvas) {
         if (msg.type === 'worker-error' || msg.type === 'worker-unhandledrejection') {
             console.error('Renderer worker reported error:', msg);
         }
-        // re-dispatch useful worker events to the window for the app to consume
+        // 将有用的 worker 事件重新派发到 window，供应用消费
         if (msg.type === 'pointer-result' || msg.type === 'ui-update' || msg.type === 'save-state' || msg.type === 'game-started' || msg.type === 'ui-error') {
             try { window.dispatchEvent(new CustomEvent('renderer-worker-event', { detail: msg })); } catch (e) {}
         }
     });
-    // surface load/parse errors
+    // 处理加载/解析错误
     worker.addEventListener('error', (ev) => {
         try {
             console.error('Renderer worker load/parse error:', ev.message, ev.filename || ev.fileName, ev.lineno || ev.lineno, ev.colno || ev.colno, ev.error || ev);
@@ -119,7 +119,7 @@ export function initGameScene(){
         try { w.postMessage({ type: 'camera', matrix: camera.matrix.elements, target: controls.target && { x: controls.target.x, y: controls.target.y, z: controls.target.z } }); } catch (e) {}
     });
 
-    // watch for devicePixelRatio changes (page zoom) and trigger resize
+    // 监听 devicePixelRatio 变化（页面缩放）并触发重置大小
     function watchDPR() {
         try {
             if (_dprMql) {
@@ -138,7 +138,7 @@ export function initGameScene(){
     }
     watchDPR();
 
-    // observe container size changes (works when DevTools open/close)
+    // 观察容器大小变化（在打开/关闭 DevTools 时有效）
     try {
         if (_resizeObserver) {
             try { _resizeObserver.disconnect(); } catch (e) {}
@@ -150,7 +150,7 @@ export function initGameScene(){
         _resizeObserver.observe(container);
     } catch (e) {}
 
-    // visualViewport often changes when DevTools open/close (Chromium). Hook it to resize.
+    // visualViewport 在打开/关闭 DevTools 时常改变（Chromium），绑定其 resize 事件以触发重置
     try {
         if (window.visualViewport) {
             if (_visualViewportHandler) try { window.visualViewport.removeEventListener('resize', _visualViewportHandler); } catch (e) {}
@@ -172,9 +172,9 @@ export function renderLoop(renderer, scene, camera, controls) {
         return;
     }
 
-    // no worker: run main-thread render loop using provided renderer
+    // 没有 worker：使用提供的 renderer 在主线程运行渲染循环
     if (!renderer || !renderer.render) {
-        // if renderer isn't a THREE.WebGLRenderer instance, skip
+        // 如果 renderer 不是 THREE.WebGLRenderer 实例，则跳过
         if (renderer && renderer.domElement && renderer.domElement.getContext) {
             try { renderer = new THREE.WebGLRenderer({ canvas: renderer.domElement, antialias: true, alpha: true }); renderer.setPixelRatio(window.devicePixelRatio || 1); } catch (e) {}
         }
@@ -199,14 +199,14 @@ export function resizeRenderer(renderer, camera) {
     camera.aspect = (logicalW > 0 && logicalH > 0) ? (logicalW / logicalH) : camera.aspect;
     camera.updateProjectionMatrix();
     try {
-        // keep the visible canvas element sized to container so DOM hit tests remain correct
+        // 保持可见的 canvas 元素与容器大小一致，确保 DOM 点击/拾取 测试正确
         if (canvasEl) {
             try { canvasEl.style.width = logicalW + 'px'; canvasEl.style.height = logicalH + 'px'; } catch (e) {}
         }
         if (worker) {
             worker.postMessage({ type: 'resize', width: logicalW, height: logicalH, devicePixelRatio: window.devicePixelRatio });
         } else if (renderer && renderer.setSize) {
-            // main-thread fallback: set renderer drawing buffer size using DPR
+            // 主线程回退：使用 DPR 设置 renderer 的绘图缓冲区大小
             const drawW = Math.max(1, Math.floor(logicalW * (window.devicePixelRatio || 1)));
             const drawH = Math.max(1, Math.floor(logicalH * (window.devicePixelRatio || 1)));
             try { renderer.setPixelRatio(window.devicePixelRatio || 1); renderer.setSize(drawW, drawH, false); } catch (e) {}
@@ -215,7 +215,7 @@ export function resizeRenderer(renderer, camera) {
     light.off(0);
 }
 
-// helpers to sync meshes with worker
+// 与 worker 同步网格的助手函数
 export function sendMeshesToWorker(meshes) {
     if (!worker) return;
     worker.postMessage({ type: 'setMeshes', meshes });
@@ -226,7 +226,7 @@ export function updateMeshInWorker(desc) {
     worker.postMessage({ type: 'updateMesh', ...desc });
 }
 
-// Generic post to worker (used by main app to send commands)
+// 通用的发消息到 worker 的函数（供主应用发送命令使用）
 export function postToWorker(msg, transfers) {
     if (!worker) return;
     try { worker.postMessage(msg, transfers || []); } catch (e) { console.error('postToWorker failed', e); }
@@ -239,7 +239,7 @@ export function removeMeshInWorker(id) {
 
 export function queryPointer(clientX, clientY) {
     if (!worker || !canvasEl) {
-        // fallback to main-thread raycast using placeholder
+        // 回退到使用 placeholder 在主线程进行射线拾取
         try {
             const rect = canvasEl.getBoundingClientRect();
             const x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -267,9 +267,9 @@ export function queryPointer(clientX, clientY) {
                 resolve(msg);
             }
         };
-        // listen for unified worker events
+        // 监听统一的 worker 事件
         window.addEventListener('renderer-worker-event', handler);
-        // legacy event name (compat)
+        // 遗留事件名（兼容）
         window.addEventListener('renderer-pointer-result', handler);
         const rect = canvasEl.getBoundingClientRect();
         worker.postMessage({ type: 'pointer', clientX, clientY, rect });

@@ -1,4 +1,4 @@
-// Worker: compute neighbor auto-expansion (flood reveal) without touching DOM
+// Worker：计算邻居自动展开（洪水式翻开），不操作 DOM
 self.addEventListener('message', (ev) => {
     const msg = ev.data;
     try {
@@ -73,6 +73,6 @@ function expandCells(state, sx, sy, sz) {
             }
         }
     }
-    // basic win/lose not computed here; caller can decide
+    // 此处不计算胜利/失败；由调用方决定
     return { reveals };
 }

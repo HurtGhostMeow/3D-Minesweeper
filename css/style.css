@@ -480,26 +480,28 @@ input:invalid {
     padding: 2px 5px;
 }
 
-/* 响应式页面 */
-@media screen and (max-width: 768px) {
-    * {
-        font-size: 1rem;
-    }
-
-    h1 {
-        font-size: 2.6rem;
-    }
-
+/* 响应式页面：针对平板与窄屏合并规则
+   - <=1024px: 将主内容列化并强制宽度为 90vw （覆盖任何 desktop 的 !important 规则）
+   - <=768px: 进一步调整字体与间距。 */
+@media screen and (max-width: 1024px) {
     #main-content {
         flex-direction: column;
         align-items: center;
         margin: 0 3vw;
     }
 
-    #game-box {
-        width: 90vw;
-        height: auto;
-        margin: 2vh 1vw;
+    /* 统一在窄屏/平板上强制使用 90vw，避免多个高优先级选择器互相覆盖 */
+    #game-box,
+    #introduction,
+    #main-content.intro-hidden #game-box,
+    #main-content.intro-hidden #introduction,
+    #main-content:not(.intro-hidden) #game-box,
+    #main-content:not(.intro-hidden) #introduction {
+        width: 90vw !important;
+        max-width: 90vw !important;
+        margin: 2vh 1vw !important;
+        flex: 0 0 auto !important;
+        flex-basis: auto !important;
     }
 
     #game-container {
@@ -511,37 +513,17 @@ input:invalid {
         width: 100%;
         height: auto;
     }
+}
 
-    #introduction {
-        width: 90vw;
-        height: auto;
-        margin: 2vh 1vw;
-    }
-    
-    footer {
-        margin: 2vh 1vw;
-    }
+@media screen and (max-width: 768px) {
+    * { font-size: 1rem; }
+    h1 { font-size: 2.6rem; }
 
-    #thanks {
-        margin: 2vh 1vw;
-    }
-    
+    footer, #thanks { margin: 2vh 1vw; }
+
     #states {
         text-align: center;
         white-space: normal;
         overflow-wrap: anywhere;
-    }
-
-    #main-content.intro-hidden #game-box,
-    #main-content.intro-hidden #introduction {
-        width: 90vw !important;
-        max-width: 90vw !important;
-        flex: 0 0 auto !important;
-        flex-basis: auto !important;
-        opacity: 1 !important;
-        transform: none !important;
-        max-height: none !important;
-        pointer-events: auto !important;
-        margin: 2vh 1vw !important;
     }
 }
