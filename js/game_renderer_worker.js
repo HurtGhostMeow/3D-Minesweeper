@@ -60,7 +60,33 @@ self.addEventListener('message', async (ev) => {
 
                     if (webgpuCandidate) {
                         try {
-                            const mod = await import('https://esm.sh/three@0.180.0/examples/jsm/renderers/WebGPURenderer.js');
+                            // 首先尝试导入社区/本地打包的 three.webgpu 实现（用户指定），再回退到 WebGPURenderer 兼容位置
+                            const candidateUrls = [
+                                'https://unpkg.com/three@0.180.0/examples/jsm/renderers/three.webgpu.js',
+                                'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/renderers/three.webgpu.js',
+                                'https://esm.sh/three@0.180.0/examples/jsm/renderers/three.webgpu.js',
+                                // 兼容旧的 WebGPURenderer 名称（仍保留作为后备）
+                                'https://unpkg.com/three@0.180.0/examples/jsm/renderers/WebGPURenderer.js',
+                                'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/renderers/WebGPURenderer.js',
+                                // 本地相对路径备用，便于用户将实现 vendor 到仓库
+                                './lib/three.webgpu.js',
+                                './lib/WebGPURenderer.js'
+                            ];
+                            let mod = null;
+                            let lastErr = null;
+                            for (const url of candidateUrls) {
+                                try {
+                                    self.postMessage({ type: 'debug', message: 'Attempting dynamic import', url });
+                                    mod = await import(url);
+                                    if (mod) {
+                                        self.postMessage({ type: 'debug', message: 'Dynamic import succeeded', url });
+                                        break;
+                                    }
+                                } catch (ie) {
+                                    lastErr = ie;
+                                    try { self.postMessage({ type: 'debug', message: 'Dynamic import failed', url, error: String(ie) }); } catch (e) {}
+                                }
+                            }
                             const WebGPURenderer = mod && (mod.WebGPURenderer || mod.default);
                             if (WebGPURenderer) {
                                 try {
@@ -77,10 +103,10 @@ self.addEventListener('message', async (ev) => {
                                     created = false;
                                 }
                             } else {
-                                self.postMessage({ type: 'debug', message: 'WebGPURenderer module not found' });
+                                self.postMessage({ type: 'debug', message: 'WebGPURenderer module not found on any candidate', lastError: String(lastErr) });
                             }
                         } catch (e) {
-                            self.postMessage({ type: 'debug', message: 'Failed to import WebGPURenderer module', error: String(e) });
+                            self.postMessage({ type: 'debug', message: 'Failed to import WebGPURenderer module (general)', error: String(e) });
                         }
                     } else {
                         self.postMessage({ type: 'debug', message: 'WebGPU not available on this worker (navigator.gpu missing or adapter unavailable)' });
