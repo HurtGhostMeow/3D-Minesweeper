@@ -4,6 +4,9 @@ import { highlightModule } from "./show_module.js";
 
 const light = highlightModule('game-renderer-js');
 
+// 主线程检测 WebGPU 支持并记录，便于快速诊断
+try { console.log('main-thread navigator.gpu present?', !!(typeof navigator !== 'undefined' && navigator.gpu)); } catch (e) {}
+
 let worker = null;
 let canvasEl = null;
 let placeholder = {
@@ -25,7 +28,8 @@ function ensureWorker(canvas) {
     worker = new Worker(workerUrl, { type: 'module' });
     worker.addEventListener('message', (ev) => {
         const msg = ev.data;
-        console.log('Renderer worker message:', msg && msg.type);
+        try { console.log('Renderer worker full message:', msg); } catch (e) {}
+        try { console.log('Renderer worker message type:', msg && msg.type); } catch (e) {}
         if (msg.type === 'inited') {
             console.log('Renderer worker initialized');
         }
@@ -35,11 +39,20 @@ function ensureWorker(canvas) {
         if (msg.type === 'worker-error' || msg.type === 'worker-unhandledrejection') {
             console.error('Renderer worker reported error:', msg);
         }
+        // 转发 debug 日志为页面事件，便于外部监听
+        if (msg.type === 'debug' || msg.type === 'debug-resize') {
+            try { window.dispatchEvent(new CustomEvent('renderer-worker-debug', { detail: msg })); } catch (e) {}
+        }
         // 将有用的 worker 事件重新派发到 window，供应用消费
         if (msg.type === 'pointer-result' || msg.type === 'ui-update' || msg.type === 'save-state' || msg.type === 'game-started' || msg.type === 'ui-error') {
             try { window.dispatchEvent(new CustomEvent('renderer-worker-event', { detail: msg })); } catch (e) {}
         }
     });
+
+// 监听并打印 worker 的 debug 事件，便于快速观察
+window.addEventListener('renderer-worker-debug', (ev) => {
+    try { console.log('renderer-worker-debug event:', ev.detail); } catch (e) {}
+});
     // 处理加载/解析错误
     worker.addEventListener('error', (ev) => {
         try {
@@ -91,6 +104,9 @@ export function initGameScene(){
             // ensure canvas CSS matches container so getBoundingClientRect remains accurate
             try { canvas.style.width = logicalW + 'px'; canvas.style.height = logicalH + 'px'; } catch (e) {}
             w.postMessage({ type: 'init', canvas: offscreen, width: logicalW, height: logicalH, cameraFov: 70, devicePixelRatio: window.devicePixelRatio }, [offscreen]);
+            try { console.log('Posted init to renderer worker (offscreen), logical size:', logicalW, logicalH, 'dpr:', window.devicePixelRatio); } catch (e) {}
+            // 发送简单 ping，用于确认 worker 收到消息并存活
+            try { w.postMessage({ type: 'ping' }); } catch (e) {}
             usedOffscreen = true;
         } catch (e) {
             console.error('OffscreenCanvas not supported or transfer failed:', e);
@@ -102,6 +118,7 @@ export function initGameScene(){
     let mainRenderer = null;
     if (!usedOffscreen) {
         try {
+            // 首先创建稳定的 WebGL 渲染器作为同步回退
             mainRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
             // Use logical (CSS) size and set pixel ratio first to ensure drawing buffer scales correctly
             const logicalW = container.clientWidth || container.offsetWidth;
@@ -110,6 +127,27 @@ export function initGameScene(){
             try { mainRenderer.setSize(logicalW, logicalH, false); } catch (e) { mainRenderer.setSize(container.offsetWidth, container.offsetHeight); }
             try { mainRenderer.setClearColor(0x000000, 0); } catch (e) {}
             console.log('Using main-thread WebGLRenderer fallback');
+
+            // 异步尝试升级到 WebGPU（如果浏览器支持且模块可用），不阻塞初始化流程
+            try {
+                if (typeof navigator !== 'undefined' && navigator.gpu) {
+                    import('https://esm.sh/three@0.180.0/examples/jsm/renderers/WebGPURenderer.js').then((mod) => {
+                        const WebGPURenderer = (mod && (mod.WebGPURenderer || mod.default));
+                        if (!WebGPURenderer) return;
+                        try {
+                            const gpuRenderer = new WebGPURenderer({ canvas: canvas, antialias: true, alpha: true });
+                            const lw = container.clientWidth || container.offsetWidth;
+                            const lh = container.clientHeight || container.offsetHeight;
+                            try { gpuRenderer.setPixelRatio && gpuRenderer.setPixelRatio(window.devicePixelRatio || 1); } catch (e) {}
+                            try { gpuRenderer.setSize && gpuRenderer.setSize(lw, lh, false); } catch (e) {}
+                            mainRenderer = gpuRenderer;
+                            console.log('Upgraded main-thread renderer to WebGPU');
+                        } catch (e) {
+                            console.debug('WebGPU renderer init failed on main thread', e);
+                        }
+                    }).catch((e) => { console.debug('Failed to load WebGPURenderer module:', e); });
+                }
+            } catch (e) {}
         } catch (e) {
             console.error('Failed to create main-thread renderer fallback:', e);
         }

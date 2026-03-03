@@ -35,20 +35,76 @@ self.addEventListener('message', async (ev) => {
                 camera = new THREE.PerspectiveCamera(msg.cameraFov || 70, canvasWidth / canvasHeight, 0.1, 1000);
                 camera.position.set(10, 10, 10);
 
-                const context = offscreen.getContext('webgl2', { antialias: true }) || offscreen.getContext('webgl', { antialias: true });
-                renderer = new THREE.WebGLRenderer({ canvas: offscreen, context, antialias: true, alpha: true });
+                // 尝试优先使用 WebGPU 渲染器（如果可用），否则回退到 WebGLRenderer
                 try {
-                    // 优先使用 renderer API（如果可用）
-                    // renderer.setSize 期望绘图缓冲区尺寸：使用 逻辑 * DPR
-                    const drawW = Math.max(1, Math.floor(canvasWidth * devicePixelRatio));
-                    const drawH = Math.max(1, Math.floor(canvasHeight * devicePixelRatio));
-                    renderer.setPixelRatio(devicePixelRatio);
-                    renderer.setSize(drawW, drawH, false);
-                    // 确保透明背景
-                    try { if (renderer.setClearColor) renderer.setClearColor(0x000000, 0); } catch (e) {}
+                    let created = false;
+                    // 显式检测 navigator.gpu 支持并尝试 requestAdapter 以确认运行时支持
+                    let webgpuCandidate = false;
+                    try {
+                        webgpuCandidate = !!(self.navigator && self.navigator.gpu);
+                        self.postMessage({ type: 'debug', message: 'navigator.gpu present', value: webgpuCandidate });
+                        if (webgpuCandidate) {
+                            try {
+                                const adapter = await self.navigator.gpu.requestAdapter();
+                                self.postMessage({ type: 'debug', message: 'navigator.gpu.requestAdapter', available: !!adapter });
+                                webgpuCandidate = !!adapter;
+                            } catch (e) {
+                                webgpuCandidate = false;
+                                self.postMessage({ type: 'debug', message: 'navigator.gpu.requestAdapter failed', error: String(e) });
+                            }
+                        }
+                    } catch (e) {
+                        webgpuCandidate = false;
+                        try { self.postMessage({ type: 'debug', message: 'navigator.gpu check failed', error: String(e) }); } catch (e) {}
+                    }
+
+                    if (webgpuCandidate) {
+                        try {
+                            const mod = await import('https://esm.sh/three@0.180.0/examples/jsm/renderers/WebGPURenderer.js');
+                            const WebGPURenderer = mod && (mod.WebGPURenderer || mod.default);
+                            if (WebGPURenderer) {
+                                try {
+                                    renderer = new WebGPURenderer({ canvas: offscreen, antialias: true, alpha: true });
+                                    const drawW = Math.max(1, Math.floor(canvasWidth * devicePixelRatio));
+                                    const drawH = Math.max(1, Math.floor(canvasHeight * devicePixelRatio));
+                                    try { renderer.setPixelRatio && renderer.setPixelRatio(devicePixelRatio); } catch (e) {}
+                                    try { renderer.setSize && renderer.setSize(drawW, drawH, false); } catch (e) {}
+                                    self.postMessage({ type: 'debug', message: 'Using WebGPU renderer in worker' });
+                                    self.postMessage({ type: 'renderer-choice', choice: 'webgpu' });
+                                    created = true;
+                                } catch (e) {
+                                    self.postMessage({ type: 'debug', message: 'WebGPURenderer init failed', error: String(e) });
+                                    created = false;
+                                }
+                            } else {
+                                self.postMessage({ type: 'debug', message: 'WebGPURenderer module not found' });
+                            }
+                        } catch (e) {
+                            self.postMessage({ type: 'debug', message: 'Failed to import WebGPURenderer module', error: String(e) });
+                        }
+                    } else {
+                        self.postMessage({ type: 'debug', message: 'WebGPU not available on this worker (navigator.gpu missing or adapter unavailable)' });
+                    }
+
+                    if (!created) {
+                        try {
+                            const context = offscreen.getContext('webgl2', { antialias: true }) || offscreen.getContext('webgl', { antialias: true });
+                            renderer = new THREE.WebGLRenderer({ canvas: offscreen, context, antialias: true, alpha: true });
+                            const drawW = Math.max(1, Math.floor(canvasWidth * devicePixelRatio));
+                            const drawH = Math.max(1, Math.floor(canvasHeight * devicePixelRatio));
+                            try { renderer.setPixelRatio(devicePixelRatio); } catch (e) {}
+                            try { renderer.setSize(drawW, drawH, false); } catch (e) { try { if (offscreen) { offscreen.width = drawW; offscreen.height = drawH; } } catch (e) {} }
+                            try { if (renderer.setClearColor) renderer.setClearColor(0x000000, 0); } catch (e) {}
+                            self.postMessage({ type: 'debug', message: 'Using WebGL renderer in worker' });
+                            self.postMessage({ type: 'renderer-choice', choice: 'webgl' });
+                        } catch (e) {
+                            self.postMessage({ type: 'debug', message: 'Failed to create WebGL renderer in worker', error: String(e) });
+                            try { if (offscreen) { offscreen.width = Math.max(1, Math.floor(canvasWidth * devicePixelRatio)); offscreen.height = Math.max(1, Math.floor(canvasHeight * devicePixelRatio)); } } catch (e) {}
+                        }
+                    }
                 } catch (e) {
-                    // 回退：如果 renderer 未就绪则直接设置 OffscreenCanvas 尺寸
-                    try { if (canvas) { canvas.width = Math.max(1, Math.floor(canvasWidth * devicePixelRatio)); canvas.height = Math.max(1, Math.floor(canvasHeight * devicePixelRatio)); } } catch (e) {}
+                    try { self.postMessage({ type: 'debug', message: 'Renderer selection failed', error: String(e) }); } catch (e) {}
+                    try { if (offscreen) { offscreen.width = Math.max(1, Math.floor(canvasWidth * devicePixelRatio)); offscreen.height = Math.max(1, Math.floor(canvasHeight * devicePixelRatio)); } } catch (e) {}
                 }
 
                 // 基本灯光
@@ -205,6 +261,10 @@ self.addEventListener('message', async (ev) => {
                 } else {
                     self.postMessage({ type: 'pointer-result', hit: false });
                 }
+                break;
+            }
+            case 'ping': {
+                try { self.postMessage({ type: 'pong' }); } catch (e) {}
                 break;
             }
             case 'start': {
