@@ -339,7 +339,7 @@ async function gameLogic(event) {
                     if (resp && resp.toggled) {
                         gameState = resp.state;
                         updateUI(gameState);
-                        try { localStorage.setItem(GAMESTATE_KEY, JSON.stringify(gameState)); } catch (e) {}
+                        try { if (!gameState.gameOver) localStorage.setItem(GAMESTATE_KEY, JSON.stringify(gameState)); } catch (e) {}
                         const id = `${clicked.x}_${clicked.y}_${clicked.z}`;
                         const mat = getMaterialForCell(gameState.grid[clicked.x][clicked.y][clicked.z]);
                         updateMeshInWorker({ id, color: mat.color, opacity: mat.opacity });
@@ -379,15 +379,13 @@ async function gameLogic(event) {
                             }
                             // 如果翻开到雷，显示所有雷并将游戏标记为结束
                                 if (revealedMine) {
-                                    gameState.gameOver = true;
+                                    setGameOver(false);
                                     revealAllCells(gameState);
                                 }
                             // 检查是否已满足胜利条件（例如通过自动展开流程导致所有非雷格子已被翻开）
                             try { gameWonCheck(gameState); } catch (e) { console.error('gameWonCheck failed', e); }
                             updateUI(gameState);
-                            try { localStorage.setItem(GAMESTATE_KEY, JSON.stringify(gameState)); } catch (e) {}
-
-                            if (gameState.gameOver) localStorage.removeItem(GAMESTATE_KEY);
+                            try { if (!gameState.gameOver) localStorage.setItem(GAMESTATE_KEY, JSON.stringify(gameState)); } catch (e) {}
                         }
                     }
                 }
@@ -494,11 +492,11 @@ function revealCell(gameState, meshDesc, x, y, z) {
     const cell = gameState.grid[x][y][z];
     if (cell.isRealved || cell.isFlagged) return;
     cell.isRealved = true;
-    localStorage.setItem( GAMESTATE_KEY, JSON.stringify(gameState) );
+    try { if (!gameState.gameOver) localStorage.setItem(GAMESTATE_KEY, JSON.stringify(gameState)); } catch (e) {}
 
     gameState.realved = (gameState.realved || 0) + 1;
     if (cell.isMine) {
-        gameState.gameOver = true;
+        setGameOver(false);
         if (meshDesc) {
             const mat = getMaterialForCell(cell);
             if (isWorkerActive()) {
@@ -517,9 +515,8 @@ function revealCell(gameState, meshDesc, x, y, z) {
             }
         }
 
-        // 可视化显示所有雷并移除本地存档
+        // 可视化显示所有雷（本地存档已由 setGameOver 清理）
         revealAllCells(gameState);
-        try { localStorage.removeItem(GAMESTATE_KEY); } catch (e) {}
 
         return;
     }
@@ -630,12 +627,22 @@ function gameWonCheck(gameState) {
     //let condition2 = (gameState.flagged === gameState.mineCount) && (gameState.gameOver === false);//作弊模式
 
     if (condition1) {
-        gameState.gameOver = true;
-        gameState.gameWon = true;
-        clearInterval(window.gameTimer);
-        document.getElementById('timer').textContent = gameState.timeElapsed;
-        localStorage.removeItem( GAMESTATE_KEY );
+        setGameOver(true);
     }
+}
+
+// 统一处理游戏结束状态（胜利或失败）
+function setGameOver(won = false) {
+    try {
+        if (!gameState) return;
+        gameState.gameOver = true;
+        gameState.gameWon = !!won;
+        clearInterval(window.gameTimer);
+        const timerEl = document.getElementById('timer');
+        if (timerEl) timerEl.textContent = gameState.timeElapsed || 0;
+        try { localStorage.removeItem(GAMESTATE_KEY); console.debug('setGameOver: removed saved game state'); } catch (e) {}
+        try { updateUI(gameState); } catch (e) {}
+    } catch (e) { console.error('setGameOver failed', e); }
 }
 
 // 在棋盘上显示所有格子（当触雷时使用）
