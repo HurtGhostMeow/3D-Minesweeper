@@ -20,6 +20,23 @@ let a = null;
 let currentSpacing = 2.2;
 let currentBlockOpacity = 0.3;
 
+// 从本地设置加载初始设置（如果存在），并应用到运行时变量与 CSS 变量
+try {
+    const savedSettings = localStorage.getItem('site-settings');
+    if (savedSettings) {
+        try {
+            const s = JSON.parse(savedSettings);
+            if (s && typeof s.spacing === 'number') currentSpacing = s.spacing;
+            if (s && typeof s.blockOpacity === 'number') currentBlockOpacity = s.blockOpacity;
+            // 将这些值也反映到 CSS 变量，便于设置面板或样式读取
+            try { document.documentElement.style.setProperty('--block-spacing', String(currentSpacing)); } catch (e) {}
+            try { document.documentElement.style.setProperty('--blur-opacity', String(currentBlockOpacity)); } catch (e) {}
+            // 通知其他模块（例如 menu）当前设置已应用
+            try { window.dispatchEvent(new CustomEvent('settings-changed', { detail: { spacing: currentSpacing, blockOpacity: currentBlockOpacity } })); } catch (e) {}
+        } catch (e) { console.warn('Failed to parse saved settings', e); }
+    }
+} catch (e) {}
+
 // 初始化场景和事件
 const { scene, camera, renderer, raycaster, controls } = initGameScene();
 // 简单的方块容器（存放描述符，不再是 THREE.Mesh）
