@@ -672,7 +672,7 @@ function revealAllCells(state) {
             if (c && c.isMine) c.isRealved = true;
         }
 
-        const spacing = 2.2;
+        const spacing = (typeof currentSpacing === 'number' ? currentSpacing : 2.2);
         const offset = (N - 1) * spacing / 2;
         const meshesToSend = [];
         for (let ax = 0; ax < N; ax++) {
