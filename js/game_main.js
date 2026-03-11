@@ -3,7 +3,7 @@ import { initialGame } from "./game_minesweeper.js";
 import { updateUI, bindUIEvents } from "./game_ui.js";
 import { initGameScene, renderLoop, resizeRenderer, sendMeshesToWorker, updateMeshInWorker, removeMeshInWorker, queryPointer, isWorkerActive, postToWorker } from "./game_renderer.js";
 import { highlightModule } from "./show_module.js";
-import * as THREE from 'https://esm.sh/three@0.180.0';
+import * as THREE from 'https://esm.sh/three';
 
 // 定义全局变量和常量
 const lightMain = highlightModule('game-main-js');

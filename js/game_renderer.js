@@ -1,5 +1,5 @@
-import * as THREE from 'https://esm.sh/three@0.180.0'; // 导入 ThreeJS
-import { OrbitControls } from 'https://esm.sh/three@0.180.0/examples/jsm/controls/OrbitControls.js'; // 导入轨道控制器
+import * as THREE from 'https://esm.sh/three'; // 导入 ThreeJS
+import { OrbitControls } from 'https://esm.sh/three/examples/jsm/controls/OrbitControls.js'; // 导入轨道控制器
 import { highlightModule } from "./show_module.js";
 
 const light = highlightModule('game-renderer-js');
@@ -131,7 +131,7 @@ export function initGameScene(){
             // 异步尝试升级到 WebGPU（如果浏览器支持且模块可用），不阻塞初始化流程
             try {
                 if (typeof navigator !== 'undefined' && navigator.gpu) {
-                    import('https://esm.sh/three@0.180.0/examples/jsm/renderers/WebGPURenderer.js').then((mod) => {
+                    import('https://esm.sh/three/examples/jsm/renderers/WebGPURenderer.js').then((mod) => {
                         const WebGPURenderer = (mod && (mod.WebGPURenderer || mod.default));
                         if (!WebGPURenderer) return;
                         try {

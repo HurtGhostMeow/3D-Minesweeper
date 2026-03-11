@@ -1,4 +1,4 @@
-import * as THREE from 'https://esm.sh/three@0.180.0';
+import * as THREE from 'https://esm.sh/three';
 import { initialGame } from './game_minesweeper.js';
 
 // Worker 已加载
@@ -62,15 +62,14 @@ self.addEventListener('message', async (ev) => {
                         try {
                             // 首先尝试导入社区/本地打包的 three.webgpu 实现（用户指定），再回退到 WebGPURenderer 兼容位置
                             const candidateUrls = [
-                                'https://unpkg.com/three@0.180.0/examples/jsm/renderers/three.webgpu.js',
-                                'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/renderers/three.webgpu.js',
-                                'https://esm.sh/three@0.180.0/examples/jsm/renderers/three.webgpu.js',
+                                'https://unpkg.com/three/examples/jsm/renderers/three.webgpu.js',
+                                'https://cdn.jsdelivr.net/npm/three/examples/jsm/renderers/three.webgpu.js',
+                                'https://esm.sh/three/examples/jsm/renderers/three.webgpu.js',
                                 // 兼容旧的 WebGPURenderer 名称（仍保留作为后备）
-                                'https://unpkg.com/three@0.180.0/examples/jsm/renderers/WebGPURenderer.js',
-                                'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/renderers/WebGPURenderer.js',
+                                'https://unpkg.com/three/examples/jsm/renderers/WebGPURenderer.js',
+                                'https://cdn.jsdelivr.net/npm/three/examples/jsm/renderers/WebGPURenderer.js',
                                 // 本地相对路径备用，便于用户将实现 vendor 到仓库
-                                './lib/three.webgpu.js',
-                                './lib/WebGPURenderer.js'
+                                './lib/Three.WebGPU.js'
                             ];
                             let mod = null;
                             let lastErr = null;
